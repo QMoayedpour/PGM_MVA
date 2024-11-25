@@ -109,7 +109,7 @@ class MySbmFromScratch(object):
         class_probs = np.random.dirichlet([alpha] * K, size=1).flatten()
         self.n_classes = [int(N*class_probs[i]) for i in range(K)]
 
-        probs = np.random.rand(K, K)
+        probs = np.random.rand(K, K)**2
 
         probs = (probs @ probs.T)
         probs = probs/np.sum(probs) * multiplier + np.eye(K)*_lambda
@@ -117,6 +117,16 @@ class MySbmFromScratch(object):
 
         return self._generate_from_probs(self.n_classes, self.probs)
 
+    def plot_adj(self):
+        cumulative_indices = np.cumsum(self.n_classes)
+
+        plt.imshow(-self.adj, cmap="gray", extent=(0, self.adj.shape[1], self.adj.shape[0], 0))
+        plt.axis("off")
+        for index in cumulative_indices:
+            plt.axhline(y=index, color='red', linestyle='-', linewidth=1)
+            plt.axvline(x=index, color='red', linestyle='-', linewidth=1)
+
+        plt.show()
 
     def _generate_from_probs(self, n_classes, probs):
         """
