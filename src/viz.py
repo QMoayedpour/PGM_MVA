@@ -92,6 +92,7 @@ class MySbmFromScratch(object):
         self.adj = get_adjancy(self.edges, len(self.nodes))
 
         self.G = nx.from_numpy_array(self.adj)
+        nx.set_node_attributes(self.G, 0, 'block')  # Initialise les classes à 0 pour toutes
 
     def plot_graph(self):
         plot_sbm(self.G, self.n_classes)    
@@ -159,3 +160,17 @@ class MySbmFromScratch(object):
                     edges.append((i, j))
 
         return edges, nodes
+
+    def _init_graph_blocks(G):
+        """
+        Initialise l'attribut 'block' de chaque nœud à 0.
+
+        Paramètres:
+        G (networkx.Graph) : Le graphe sur lequel appliquer l'attribut.
+
+        Retourne:
+        dict : Un dictionnaire contenant les nœuds et leurs attributs.
+        """
+        nx.set_node_attributes(G, 0, 'block')
+
+        self.G = {node: {'block': data['block']} for node, data in G.nodes(data=True)}
