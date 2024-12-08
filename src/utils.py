@@ -28,3 +28,12 @@ def random_permute_adj(adj_matrix, plot=True):
         plt.show()
 
     return (perm_adj, idx)
+
+
+def convert_to_ranks(array):
+
+    unique_sorted = sorted(set(array))
+
+    value_to_rank = {value: rank for rank, value in enumerate(unique_sorted)}
+
+    return [value_to_rank[value] for value in array]
