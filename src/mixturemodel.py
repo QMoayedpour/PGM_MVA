@@ -382,11 +382,11 @@ class MixtureModel():
             tau_init = self._init_spectral()
 
         tau_init = self._init_tau_sparse()
-        alpha, pi, tau, logs_like = self.em(tau= tau_init, max_it=max_it, tolerance=tolerance, verbose=verbose,
-                                           log_path=True)
+        alpha, pi, tau, logs_like = self.em(tau=tau_init, max_it=max_it, tolerance=tolerance,
+                                            verbose=verbose, log_path=True)
         likelihood = self._likelihood(torch.tensor(alpha, device=self.device), 
-                                        torch.tensor(pi, device=self.device), 
-                                        tau.to(self.device))
+                                      torch.tensor(pi, device=self.device), 
+                                      tau.to(self.device))
         return {
             'alpha': alpha,
             'pi': pi,
@@ -394,7 +394,7 @@ class MixtureModel():
             'likelihood': likelihood.item(),
             'logs_like': logs_like
         }
-    
+
     def full_proc(self, max_q=8, n_parralels=20, max_it=30, criterion="ICL", init=""):
         all_results = {}
         for Q in trange(2, max_q+1):
@@ -411,16 +411,13 @@ class MixtureModel():
 
         processes = []
         for seed in range(num_inits):
-            # Passer 'self' à la fonction worker pour qu'elle ait accès à l'instance de la classe
             p = mp.Process(target=worker, args=(seed, self, results, init, max_it, tolerance))
             p.start()
             processes.append(p)
 
-        # Attente de la fin des processus
         for p in processes:
             p.join()
 
-        # Trouver le meilleur résultat parmi les résultats
         best_res = max(results, key=lambda x: x['likelihood'])
         if upd_params:
             self.alpha = best_res["alpha"]
