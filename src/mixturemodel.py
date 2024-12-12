@@ -8,7 +8,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 import networkx as nx
 import random
 import torch
-from tqdm import trange
+from tqdm import trange, tqdm
 import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor
 from sklearn.cluster import KMeans
@@ -16,8 +16,7 @@ from sklearn.cluster import KMeans
 
 def worker(seed, model, results, init, max_it, tolerance):
     torch.manual_seed(seed)
-    
-    # Initialisation de tau
+
     if init == "Kmeans" or init == "K-means":
         tau_init = model._init_K_means()
     elif init == "Spectral":
@@ -25,15 +24,12 @@ def worker(seed, model, results, init, max_it, tolerance):
     else:
         tau_init = model._init_tau_sparse()
 
-    # Exécuter l'EM pour entraîner le modèle
     alpha, pi, tau, logs_like = model.em(tau=tau_init, max_it=max_it, tolerance=tolerance, verbose=False, log_path=True)
 
-    # Cloner et transférer les tenseurs sur le CPU
     alpha_cpu = torch.tensor(alpha).clone()
     pi_cpu = torch.tensor(pi).clone()
     tau_cpu = tau.clone().cpu()
 
-    # Calculer la vraisemblance avec les tenseurs sur le CPU
     likelihood = model._likelihood(
         alpha_cpu.to(model.device),
         pi_cpu.to(model.device),
@@ -161,19 +157,18 @@ class MixtureModel():
 
         numerator = torch.einsum('iq,jl,ij->lq', tau, tau, self.X * mask)
         denominator = torch.einsum('iq,jl,ij->lq', tau, tau, mask.float())
-        
 
         pi = numerator / denominator
         alpha = tau.mean(dim=0)   
 
         return alpha, pi  # (K), (KxK)
 
-    def compute_tau(self, alpha, pi, tau, epsilon=1e-10):
+    def compute_tau(self, alpha, pi, tau, epsilon=1e-5):
         N, K = tau.size()
 
-
+        # clip sur pi pour éviter les valeurs proches de 0 ou 1, qui peuvent poser problème lors du log.
         pi = torch.clamp(pi, min=epsilon, max=1 - epsilon)
-        
+
         X_expanded = self.X.unsqueeze(-1).unsqueeze(-1)  # (N, N, 1, 1)
         pi_expanded = pi.unsqueeze(0).unsqueeze(0)  # (1, 1, K, K)
 
@@ -190,10 +185,15 @@ class MixtureModel():
         log_alpha = torch.log(alpha + epsilon).unsqueeze(0)  # (1, K)
 
         log_tau = log_alpha + sum_jl
-        log_tau = log_tau - log_tau.logsumexp(dim=1, keepdim=True)  # Normalization in log-space
+        log_tau = log_tau - (log_tau + epsilon).logsumexp(dim=1, keepdim=True)  # Normalisation en espace logarithmique
 
-        tau_new = torch.exp(log_tau)  # Back to probability space
-        
+        tau_new = torch.exp(log_tau)  # Retour à l'espace des probabilités
+
+        # Normalisation par ligne pour s'assurer que la somme de chaque ligne de tau est égale à 1
+        tau_new = tau_new / tau_new.sum(dim=1, keepdim=True)
+
+        tau_new = torch.nan_to_num(tau_new, nan=epsilon)
+
         return tau_new
 
     def _Q(self, alpha, pi, tau):
@@ -212,7 +212,8 @@ class MixtureModel():
         return term1 + term2
 
 
-    def _likelihood(self, alpha, pi, tau):
+    def _likelihood(self, alpha, pi, tau, epsilon=1e-5):
+        pi = torch.clamp(pi, min=epsilon, max=1 - epsilon)
         term1 = torch.einsum('iq,q->', tau, torch.log(alpha))
 
         X_unsqueezed = self.X.unsqueeze(-1).unsqueeze(-1)  # (N, N, 1, 1)
@@ -245,15 +246,22 @@ class MixtureModel():
         logs_like = []
         prev_value = -float('inf')
         for _ in trange(max_it) if verbose else range(max_it):
+            tau = torch.clamp(tau, min=1e-5, max=1 - 1e-5)
             alpha, pi = self.comp_alpha_pi(tau)  # M step
-
+            if torch.isnan(alpha).any():
+                print("Nans in alpha")
+            if torch.isnan(pi).any():
+                print("Nans in pi")
             tau = self._fixed_point_algorithm(alpha, pi, tau)  # E step
-
+            tau = torch.clamp(tau, min=1e-5, max=1 - 1e-5)
+            if torch.isnan(tau).any():
+                print("Nans in tau")
             likeli = self._likelihood(alpha, pi, tau)  # Compute likelihood
             logs_like.append(likeli.item())
             if abs(likeli - prev_value) < tolerance:
                 break
             prev_value = likeli
+
 
         if upd_params:
             self.alpha, self.pi, self.tau = alpha.cpu().numpy(), pi.cpu().numpy(), tau
@@ -317,7 +325,7 @@ class MixtureModel():
                     S += (1-x[p[G.nodes[i]['block']]])
             minS = min(S,minS)
             minp = p
-            
+
         return minS
 
 
@@ -381,7 +389,7 @@ class MixtureModel():
         elif init == "Spectral":
             tau_init = self._init_spectral()
 
-        tau_init = self._init_tau_sparse()
+        tau_init = self._init_tau()
         alpha, pi, tau, logs_like = self.em(tau=tau_init, max_it=max_it, tolerance=tolerance,
                                             verbose=verbose, log_path=True)
         likelihood = self._likelihood(torch.tensor(alpha, device=self.device), 
@@ -410,14 +418,14 @@ class MixtureModel():
         results = manager.list()
 
         processes = []
-        for seed in range(num_inits):
+        for seed in trange(num_inits):
             p = mp.Process(target=worker, args=(seed, self, results, init, max_it, tolerance))
             p.start()
             processes.append(p)
 
-        for p in processes:
+        for p in tqdm(processes):
             p.join()
-
+        self.all_res = results
         best_res = max(results, key=lambda x: x['likelihood'])
         if upd_params:
             self.alpha = best_res["alpha"]
