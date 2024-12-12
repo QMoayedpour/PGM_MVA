@@ -5,6 +5,25 @@ import numba
 from matplotlib import pyplot as plt
 from tqdm import trange
 
+
+def safe_digamma(x):
+    """Calculate digamma, ensuring the input is strictly positive."""
+    return digamma(np.clip(x, 1e-4, np.inf))
+
+
+def safe_betaln(a, b):
+    """Calculate betaln, ensuring that a and b are strictly positive."""
+    a_safe = np.clip(a, 1e-4, np.inf)
+    b_safe = np.clip(b, 1e-4, np.inf)
+    return betaln(a_safe, b_safe)
+
+
+def safe_gammaln(a):
+    """Calculate gammaln, ensuring that a is strictly positive."""
+    a_safe = np.clip(a, 1e-4, np.inf)
+    return gammaln(a_safe)
+
+
 class NetworkModuleInference:
     def __init__(self, A, K_values, opts=None, net0=None):
         self.A = lil_matrix(A, dtype='b').tocsr() if not isinstance(A, lil_matrix) else A
@@ -24,21 +43,6 @@ class NetworkModuleInference:
             Q[i] = np.exp(JL * Q[j] + JG + lnpi)
             sum_q = Q[i].sum()
             Q[i] /= sum_q + 1e-5
-
-    def safe_digamma(x):
-        """Calculate digamma, ensuring the input is strictly positive."""
-        return digamma(np.clip(x, 1e-4, np.inf))
-
-    def safe_betaln(a, b):
-        """Calculate betaln, ensuring that a and b are strictly positive."""
-        a_safe = np.clip(a, 1e-4, np.inf)
-        b_safe = np.clip(b, 1e-4, np.inf)
-        return betaln(a_safe, b_safe)
-
-    def safe_gammaln(a):
-        """Calculate gammaln, ensuring that a is strictly positive."""
-        a_safe = np.clip(a, 1e-4, np.inf)
-        return gammaln(a_safe)
     
     def learn(self, K, max_iter=20, verbose=False):
         N = self.A.shape[0]
