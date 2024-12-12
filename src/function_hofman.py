@@ -22,21 +22,23 @@ class NetworkModuleInference:
     def estep_numba(rows, cols, Q, JL, JG, lnpi, n):
         for i, j in zip(rows, cols):
             Q[i] = np.exp(JL * Q[j] + JG + lnpi)
-            Q[i] /= Q[i].sum()
+            sum_q = Q[i].sum()
+            Q[i] /= sum_q + 1e-5
 
+    def safe_digamma(x):
         """Calculate digamma, ensuring the input is strictly positive."""
-    return digamma(np.clip(x, 1e-4, np.inf))
+        return digamma(np.clip(x, 1e-4, np.inf))
 
-def safe_betaln(a, b):
-    """Calculate betaln, ensuring that a and b are strictly positive."""
-    a_safe = np.clip(a, 1e-4, np.inf)
-    b_safe = np.clip(b, 1e-4, np.inf)
-    return betaln(a_safe, b_safe)
+    def safe_betaln(a, b):
+        """Calculate betaln, ensuring that a and b are strictly positive."""
+        a_safe = np.clip(a, 1e-4, np.inf)
+        b_safe = np.clip(b, 1e-4, np.inf)
+        return betaln(a_safe, b_safe)
 
-def safe_gammaln(a):
-    """Calculate gammaln, ensuring that a is strictly positive."""
-    a_safe = np.clip(a, 1e-4, np.inf)
-    return gammaln(a_safe)
+    def safe_gammaln(a):
+        """Calculate gammaln, ensuring that a is strictly positive."""
+        a_safe = np.clip(a, 1e-4, np.inf)
+        return gammaln(a_safe)
     
     def learn(self, K, max_iter=20, verbose=False):
         N = self.A.shape[0]
