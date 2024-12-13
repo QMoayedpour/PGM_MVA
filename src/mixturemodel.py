@@ -291,11 +291,11 @@ class MixtureModel():
     
     def _BIC(self, tau, Q):
         alpha, pi = self.comp_alpha_pi(tau)
-        return -2*self._likelihood(alpha, pi, tau) + (Q*(Q+1) + (Q*self.N)) * np.log(self.N)
+        return -2*self._likelihood(alpha, pi, tau) + (Q*(Q+3))* np.log(self.N*(self.N-1)/2)
 
     def _AIC(self, tau, Q):
         alpha, pi = self.comp_alpha_pi(tau)
-        return -2*self._likelihood(alpha, pi, tau) + 2 * Q        
+        return -2*self._likelihood(alpha, pi, tau) + Q*(Q+3)        
 
     def discrete_distribution(self, x):
         cum_dist = torch.tensor(x.cumsum(0), dtype=torch.float)
