@@ -22,8 +22,10 @@ def worker(seed, model, results, init, max_it, tolerance):
         tau_init = model._init_K_means()
     elif init == "Spectral":
         tau_init = model._init_spectral()
-    else:
+    elif init == "Sparse" or init == "RandomSparse":
         tau_init = model._init_tau_sparse()
+    else:
+        tau_init = model._init_tau()
 
     alpha, pi, tau, logs_like = model.em(tau=tau_init, max_it=max_it, tolerance=tolerance, verbose=False, log_path=True)
 
@@ -87,12 +89,12 @@ class MixtureModel():
         L = self.laplacian_matrix()
         k = self.K
         eigvals, eigvecs = np.linalg.eigh(L)
-    
+
         eigvecs_k = eigvecs[:, :k]
-    
+
         kmeans = KMeans(n_clusters=k)
         kmeans.fit(eigvecs_k)
-        
+
         return kmeans.labels_
 
     def _init_spectral(self):
@@ -217,7 +219,7 @@ class MixtureModel():
         pi = torch.clamp(pi, min=epsilon, max=1 - epsilon)
         term1 = torch.einsum('iq,q->', tau, torch.log(alpha))
 
-        X_unsqueezed = self.X.unsqueeze(-1).unsqueeze(-1)  # (N, N, 1, 1)
+        X_unsqueezed = self.X.unsqueeze(-1).unsqueeze(-1).to(tau.device)  # (N, N, 1, 1)
         log_b = (
             X_unsqueezed * torch.log(pi) + (1 - X_unsqueezed) * torch.log(1 - pi)
         )
@@ -244,7 +246,8 @@ class MixtureModel():
            tau=None, log_path=False, max_it_fp=50):
         if tau==None:
             tau = self.tau
-
+        tau = tau.to(self.device)
+        self.X = self.X.to(self.device)
         start_time = time.time()
         logs_like = []
         prev_value = -float('inf')
@@ -266,20 +269,21 @@ class MixtureModel():
             prev_value = likeli
 
         self.time_passed = time.time() - start_time
-
+        alpha, pi, tau = alpha.cpu(), pi.cpu(), tau.cpu()
+        self.X = self.X.cpu()
         if upd_params:
             self.alpha, self.pi, self.tau = alpha.cpu().numpy(), pi.cpu().numpy(), tau
-        
+
         if log_path:
             return (alpha.cpu().numpy(), pi.cpu().numpy(), tau, logs_like)
 
-        return alpha.cpu().numpy(), pi.cpu().numpy(), tau
+        return alpha.numpy(), pi.numpy(), tau
 
     def _ICL(self, tau, Q, init=False):
         if init:
             self.__init__(self.X.cpu().numpy(), self.N, Q, device=self.device)
             self.em()
-        tau = tau.to(self.device)
+
         alpha, pi = self.comp_alpha_pi(tau)
         n = self.N
         term = (1 / 4) * Q * (Q + 1) * np.log((n * (n - 1)) / 2) + ((Q - 1) / 2) * np.log(n)
@@ -392,13 +396,17 @@ class MixtureModel():
         
         elif init == "Spectral":
             tau_init = self._init_spectral()
+        
+        elif init== "RandomSparse" or init=="Sparse":
+            tau_init = self._init_tau_sparse()
 
-        tau_init = self._init_tau()
+        else:
+            tau_init = self._init_tau()
         alpha, pi, tau, logs_like = self.em(tau=tau_init, max_it=max_it, tolerance=tolerance,
                                             verbose=verbose, log_path=True)
         likelihood = self._likelihood(torch.tensor(alpha, device=self.device), 
                                       torch.tensor(pi, device=self.device), 
-                                      tau.to(self.device))
+                                      tau)
         return {
             'alpha': alpha,
             'pi': pi,
@@ -414,8 +422,8 @@ class MixtureModel():
             all_results[K] = self.em_parallelised_2(num_inits=n_parralels, max_it=max_it, 
                                                     upd_params=False, return_params=True, init=init)
             all_results[K]["ICL"] = self._ICL(all_results[K]["tau"], K)
-            all_results[K]["BIC"] = self._BIC(all_results[K]["tau"].to(self.device), K)
-            all_results[K]["AIC"] = self._AIC(all_results[K]["tau"].to(self.device), K)
+            all_results[K]["BIC"] = self._BIC(all_results[K]["tau"], K)
+            all_results[K]["AIC"] = self._AIC(all_results[K]["tau"], K)
         return all_results
 
     def em_parallelised_2(self, num_inits=5, max_it=50, tolerance=1e-10, 
@@ -445,9 +453,11 @@ class MixtureModel():
 
         return best_res["tau"]
 
-    def plot_logs_path(self, title=""):
-        plt.figure(figsize=(12,6))
+    def plot_logs_path(self, title="", max_l=1000):
+        plt.figure(figsize=(12, 6))
         for idx in self.all_res:
-            plt.plot(idx["logs_like"])
+            plt.step(range(len(idx["logs_like"][:max_l])), idx["logs_like"][:max_l], where="post")
         plt.title(title)
+        plt.ylabel("Log-Likelihood")
+        plt.grid(True)
         plt.show()
