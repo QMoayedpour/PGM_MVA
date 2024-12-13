@@ -229,7 +229,7 @@ class MixtureModel():
         term3 = -torch.einsum('iq,iq->', tau, torch.log(tau + epsilon))
 
         result = term1 + term2 + term3
-        return result/self.N
+        return result#/self.N
 
     def _fixed_point_algorithm(self, alpha, pi, tau_initial, tol=1e-6, max_iter=100):
         tau = tau_initial.clone()
@@ -244,7 +244,7 @@ class MixtureModel():
 
     def em(self, max_it=50, tolerance=1e-10, upd_params=True, verbose=True,
            tau=None, log_path=False, max_it_fp=50):
-        if tau==None:
+        if tau == None:
             tau = self.tau
         tau = tau.to(self.device)
         self.X = self.X.to(self.device)
@@ -336,7 +336,6 @@ class MixtureModel():
 
         return minS
 
-
     def plot_preds_adjancy(self, tau):
         """
         Visualise une matrice d'adjacence regroupée selon les classes des prédites.
@@ -397,7 +396,7 @@ class MixtureModel():
         elif init == "Spectral":
             tau_init = self._init_spectral()
         
-        elif init== "RandomSparse" or init=="Sparse":
+        elif init == "RandomSparse" or init == "Sparse":
             tau_init = self._init_tau_sparse()
 
         else:
@@ -427,17 +426,17 @@ class MixtureModel():
         return all_results
 
     def em_parallelised_2(self, num_inits=5, max_it=50, tolerance=1e-10, 
-                          upd_params=True, return_params=False, init=""):
+                          upd_params=True, return_params=False, init="", verbose=True):
         manager = mp.Manager()
         results = manager.list()
 
         processes = []
-        for seed in trange(num_inits):
+        for seed in trange(num_inits) if verbose else range(num_inits):
             p = mp.Process(target=worker, args=(seed, self, results, init, max_it, tolerance))
             p.start()
             processes.append(p)
 
-        for p in tqdm(processes):
+        for p in tqdm(processes) if verbose else processes:
             p.join()
         self.all_res = results
 
