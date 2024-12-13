@@ -156,9 +156,9 @@ class MixtureModel():
 
     def comp_alpha_pi(self, tau):
 
-        mask = 1 - torch.eye(self.N, device=self.device)  # Diagonal mask to exclude self-loops
+        mask = 1 - torch.eye(self.N, device=tau.device)  # Diagonal mask to exclude self-loops
 
-        numerator = torch.einsum('iq,jl,ij->lq', tau, tau, self.X * mask)
+        numerator = torch.einsum('iq,jl,ij->lq', tau, tau, self.X.to(tau.device) * mask)
         denominator = torch.einsum('iq,jl,ij->lq', tau, tau, mask.float())
 
         pi = numerator / denominator
@@ -420,6 +420,7 @@ class MixtureModel():
             self.K = K
             all_results[K] = self.em_parallelised_2(num_inits=n_parralels, max_it=max_it, 
                                                     upd_params=False, return_params=True, init=init)
+            self.X = self.X.to('cpu')
             all_results[K]["ICL"] = self._ICL(all_results[K]["tau"], K)
             all_results[K]["BIC"] = self._BIC(all_results[K]["tau"], K)
             all_results[K]["AIC"] = self._AIC(all_results[K]["tau"], K)
