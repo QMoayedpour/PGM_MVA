@@ -2,7 +2,7 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import random
-from .utils import get_adjancy
+from .utils import get_adjancy, remove_isolated
 from .viz import plot_sbm
 
 
@@ -44,10 +44,20 @@ class MySbmFromScratch(object):
         else:
             self.edges, self.nodes = self._generate_from_probs(n_classes, probs)
             self.n_classes = n_classes
-        self.adj = get_adjancy(self.edges, len(self.nodes))
+
+        adj = get_adjancy(self.edges, len(self.nodes))
+        self.adj, isolated_idx = remove_isolated(adj)
 
         self.G = nx.from_numpy_array(self.adj)
-        nx.set_node_attributes(self.G, 0, 'block')  # Initialise les classes à 0 pour toutes
+
+        labels = [[i]*j for i, j in enumerate(self.n_classes)]
+        labels = [item for sublist in labels for item in sublist]
+
+        labels = [label for idx, label in enumerate(labels) if idx not in isolated_idx]
+        self.n_classes = [labels.count(i) for i in range(len(self.n_classes))]
+        node_values = dict(zip(self.G.nodes, labels))
+        nx.set_node_attributes(self.G, node_values, name="gt")
+        #nx.set_node_attributes(self.G, labels, 'gt')  # Initialise les classes à 0 pour toutes
 
     def plot_graph(self):
         plot_sbm(self.G, self.n_classes)
@@ -126,6 +136,6 @@ class MySbmFromScratch(object):
         Retourne:
         dict : Un dictionnaire contenant les nœuds et leurs attributs.
         """
-        nx.set_node_attributes(G, 0, 'block')
+        nx.set_node_attributes(G, 0, 'gt')
 
-        self.G = {node: {'block': data['block']} for node, data in G.nodes(data=True)}
+        self.G = {node: {'gt': data['gt']} for node, data in G.nodes(data=True)}

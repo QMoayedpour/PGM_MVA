@@ -37,3 +37,13 @@ def convert_to_ranks(array):
     value_to_rank = {value: rank for rank, value in enumerate(unique_sorted)}
 
     return [value_to_rank[value] for value in array]
+
+
+def remove_isolated(adjacency_matrix):
+    connected = np.any(adjacency_matrix, axis=0) | np.any(adjacency_matrix, axis=1)
+
+    filtered_matrix = adjacency_matrix[np.ix_(connected, connected)]
+
+    isolated_idx = np.where(~connected)[0]
+
+    return filtered_matrix, isolated_idx
