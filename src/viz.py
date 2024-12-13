@@ -103,3 +103,36 @@ def plot_adjacency_matrix_by_class(graph, class_name="gt"):
     plt.grid(False)
     plt.tight_layout()
     plt.show()
+
+
+def normalise(array):
+    array = np.array(array)
+    return (array-array.min())/(array.max()-array.min())
+
+
+def plot_criterions(results):
+
+    criterions = ["BIC", "AIC", "ICL"]
+
+    dic_results = {}
+
+    for criterion in criterions:
+        dic_results[criterion] = []
+    list_k = []
+    for key in results.keys():
+        list_k.append(key)
+        for criterion in criterions:
+            dic_results[criterion].append(results[key][criterion].item())
+    plt.figure(figsize=(12,3))
+    for criterion in dic_results:
+        normalized_values = normalise(dic_results[criterion])
+        line, = plt.plot(list_k, normalized_values, label=criterion)
+        fun = min
+        if criterion == "ICL":
+            fun = max
+        idx = normalized_values.tolist().index(fun(normalized_values))
+        plt.axvline(list_k[idx], linestyle='--', c=line.get_color())
+    plt.yticks([])
+    plt.legend()
+
+    plt.show()
