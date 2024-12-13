@@ -1,4 +1,5 @@
 import numpy as np
+import time
 from .viz import *
 import torch.multiprocessing as mp
 from itertools import permutations
@@ -139,7 +140,7 @@ class MixtureModel():
                 else:
 
                     new_centroids.append(random.randint(0, self.N - 1))
-            
+
             if np.array_equal(centroids, new_centroids):
                 break
             centroids = new_centroids
@@ -149,8 +150,8 @@ class MixtureModel():
         for i in range(self.N):
             tau[i] = torch.zeros(k, dtype=torch.float)
             tau[i][int(labels[i])] = 1
-        return torch.tensor(tau, dtype=torch.float).to(self.device)
-        
+        return tau.to(self.device)
+
     def comp_alpha_pi(self, tau):
 
         mask = 1 - torch.eye(self.N, device=self.device)  # Diagonal mask to exclude self-loops
@@ -159,7 +160,7 @@ class MixtureModel():
         denominator = torch.einsum('iq,jl,ij->lq', tau, tau, mask.float())
 
         pi = numerator / denominator
-        alpha = tau.mean(dim=0)   
+        alpha = tau.mean(dim=0)
 
         return alpha, pi  # (K), (KxK)
 
@@ -240,9 +241,11 @@ class MixtureModel():
         return tau
 
     def em(self, max_it=50, tolerance=1e-10, upd_params=True, verbose=True,
-           tau=None, log_path=False):
+           tau=None, log_path=False, max_it_fp=50):
         if tau==None:
             tau = self.tau
+
+        start_time = time.time()
         logs_like = []
         prev_value = -float('inf')
         for _ in trange(max_it) if verbose else range(max_it):
@@ -252,7 +255,7 @@ class MixtureModel():
                 print("Nans in alpha")
             if torch.isnan(pi).any():
                 print("Nans in pi")
-            tau = self._fixed_point_algorithm(alpha, pi, tau)  # E step
+            tau = self._fixed_point_algorithm(alpha, pi, tau, tolerance, max_it_fp)  # E step
             tau = torch.clamp(tau, min=1e-5, max=1 - 1e-5)
             if torch.isnan(tau).any():
                 print("Nans in tau")
@@ -262,6 +265,7 @@ class MixtureModel():
                 break
             prev_value = likeli
 
+        self.time_passed = time.time() - start_time
 
         if upd_params:
             self.alpha, self.pi, self.tau = alpha.cpu().numpy(), pi.cpu().numpy(), tau
@@ -283,7 +287,7 @@ class MixtureModel():
     
     def _BIC(self, tau, Q):
         alpha, pi = self.comp_alpha_pi(tau)
-        return -2*self._likelihood(alpha, pi, tau) + Q * np.log(self.N)
+        return -2*self._likelihood(alpha, pi, tau) + (Q*(Q+1) + (Q*self.N)) * np.log(self.N)
 
     def _AIC(self, tau, Q):
         alpha, pi = self.comp_alpha_pi(tau)
@@ -403,13 +407,15 @@ class MixtureModel():
             'logs_like': logs_like
         }
 
-    def full_proc(self, max_q=8, n_parralels=20, max_it=30, criterion="ICL", init=""):
+    def full_proc(self, list_K=[8], n_parralels=20, max_it=30, criterion="ICL", init=""):
         all_results = {}
-        for Q in trange(2, max_q+1):
-            self.K = Q
-            all_results[Q] = self.em_parallelised(num_inits=n_parralels, max_it=max_it, 
-                                                  upd_params=False, return_params=True, init=init)
-            all_results[Q]["criterion"] = self._ICL(all_results[Q]["tau"], Q)
+        for K in tqdm(list_K):
+            self.K = K
+            all_results[K] = self.em_parallelised_2(num_inits=n_parralels, max_it=max_it, 
+                                                    upd_params=False, return_params=True, init=init)
+            all_results[K]["ICL"] = self._ICL(all_results[K]["tau"], K)
+            all_results[K]["BIC"] = self._BIC(all_results[K]["tau"].to(self.device), K)
+            all_results[K]["AIC"] = self._AIC(all_results[K]["tau"].to(self.device), K)
         return all_results
 
     def em_parallelised_2(self, num_inits=5, max_it=50, tolerance=1e-10, 
@@ -426,6 +432,7 @@ class MixtureModel():
         for p in tqdm(processes):
             p.join()
         self.all_res = results
+
         best_res = max(results, key=lambda x: x['likelihood'])
         if upd_params:
             self.alpha = best_res["alpha"]
@@ -437,3 +444,10 @@ class MixtureModel():
             return best_res
 
         return best_res["tau"]
+
+    def plot_logs_path(self, title=""):
+        plt.figure(figsize=(12,6))
+        for idx in self.all_res:
+            plt.plot(idx["logs_like"])
+        plt.title(title)
+        plt.show()
