@@ -48,6 +48,13 @@ def comp_nmi(graph, tau):
     list_gt = [data["gt"] for _, data in graph.nodes(data=True)]
     return nmi(list_gt, tau.argmax(dim=1).numpy().tolist())
 
+def comp_nmi_school(graph, tau):
+    """
+    Calcul le NMI entre les vrais labels et labels du modèle (en partant de tau)
+    """
+    list_gt = [data["classname"] for _, data in graph.nodes(data=True)]
+    return nmi(list_gt, tau.argmax(dim=1).numpy().tolist())
+
 
 def compute_modularity_from_gt(graph):
     communities = defaultdict(set)
