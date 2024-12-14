@@ -56,7 +56,7 @@ def assign_colors_to_classes(graph, class_name):
 
 
 def plot_class_graph(graph, class_name):
-    class_to_color, node_colors = assign_colors_to_classes(graph, 'gt')
+    class_to_color, node_colors = assign_colors_to_classes(graph, class_name)
 
     plt.figure(figsize=(10, 10))
     pos = nx.spring_layout(graph)
@@ -97,7 +97,7 @@ def plot_adjacency_matrix_by_class(graph, class_name="gt"):
     for boundary in class_boundaries:
         plt.axhline(boundary - 0.5, color='red', linewidth=1.5)
         plt.axvline(boundary - 0.5, color='red', linewidth=1.5)
-    
+
     plt.xticks([])
     plt.yticks([])
     plt.grid(False)
