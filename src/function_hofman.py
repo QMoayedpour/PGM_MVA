@@ -3,7 +3,8 @@ from scipy.special import comb, digamma, betaln, gammaln
 from scipy.sparse import lil_matrix
 import numba
 from matplotlib import pyplot as plt
-from tqdm import trange
+from tqdm import trange, tqdm
+import math
 
 
 def safe_digamma(x):
@@ -43,11 +44,12 @@ class NetworkModuleInference:
             Q[i] = np.exp(JL * Q[j] + JG + lnpi)
             sum_q = Q[i].sum()
             Q[i] /= sum_q + 1e-5
-    
+
+
     def learn(self, K, max_iter=20, verbose=False):
         N = self.A.shape[0]
         M = 0.5 * self.A.sum()
-        C = comb(N, 2)
+        C = comb(N, K)
 
         ap0, bp0, am0, bm0 = self.net0.get('ap0', N * 2), self.net0.get('bp0', 1), self.net0.get('am0', 1), self.net0.get('bm0', 2)
         a0 = np.ones([1, K])
@@ -58,8 +60,8 @@ class NetworkModuleInference:
         rows, cols = self.A.nonzero()
 
         F = []
+        BIC = []
         TOL_DF = self.opts.get('TOL_DF', 1e-2)
-        VERBOSE = self.opts.get('VERBOSE', 0)
 
         for i in trange(max_iter) if verbose else range(max_iter):
             psiap, psibp = safe_digamma(ap), safe_digamma(bp)
@@ -68,9 +70,7 @@ class NetworkModuleInference:
 
             JL, JG = psiap - psibp - psiam + psibm, psibm - psim - psibp + psip
             lnpi = safe_digamma(a) - safe_digamma(a.sum())
-
             self.estep_numba(rows, cols, Q, JL, JG, lnpi, n)
-
             n = Q.sum(axis=0)
             npp = 0.5 * (Q.T @ self.A @ Q).diagonal().sum()
             npm = 0.5 * np.trace(Q.T @ (N * n - Q)) - npp
@@ -84,13 +84,15 @@ class NetworkModuleInference:
             F_value = safe_betaln(ap, bp) - safe_betaln(ap0, bp0) + safe_betaln(am, bm) - safe_betaln(am0, bm0)
             F_value += np.sum(safe_gammaln(a)) - safe_gammaln(a.sum()) - np.sum(np.multiply(Q, np.log(Q)))
             F.append(-F_value)
-
+            BIC.append(F_value + 0.5*K*np.log(N))
 
             if i > 1 and abs(F[-1] - F[-2]) < TOL_DF:
                 break
 
         return {
             'F': F[-1],
+            'BIC': BIC[-1],
+            'BIC_iter': BIC,
             'F_iter': F,
             'Q': Q,
             'K': K,
@@ -106,35 +108,36 @@ class NetworkModuleInference:
         results = []
         F_K = []
 
-        for K in self.K_values:
+        for K in tqdm(self.K_values):
             best_net = None
-            best_F = -np.inf
+            best_F = np.inf
 
             for _ in range(NUM_RESTARTS):
                 net = self.learn(K, verbose=self.opts.get('VERBOSE', False))
-                if net['F'] > best_F:
+
+                if net['BIC'] < best_F:
                     best_net = net
-                    best_F = net['F']
+                    best_F = net['BIC']
 
             results.append(best_net)
             F_K.append(best_F)
 
-        best_idx = np.argmax(F_K)
+        best_idx = np.argmin(F_K)
         return results[best_idx], results
 
     def plot_results(self, net, nets_by_K):
         K_values = [net['K'] for net in nets_by_K]
-        F_values = [net['F'] for net in nets_by_K]
+        F_values = [net['BIC'] for net in nets_by_K]
 
         plt.figure(figsize=(15, 5))
 
         plt.subplot(1, 3, 1)
         plt.plot(K_values, F_values, 'b^-')
-        plt.plot(net['K'], net['F'], 'ro', label='Optimal K')
+        plt.plot(net['K'], net['BIC'], 'ro', label='Optimal K')
         plt.legend()
         plt.title('Complexity Control')
         plt.xlabel('K')
-        plt.ylabel('F')
+        plt.ylabel('BIC')
         plt.grid()
 
         plt.subplot(1, 3, 2)
@@ -144,21 +147,10 @@ class NetworkModuleInference:
         plt.ylabel('N')
 
         plt.subplot(1, 3, 3)
-        plt.plot(range(1, len(net['F_iter']) + 1), net['F_iter'], 'bo-')
+        plt.plot(range(1, len(net['BIC_iter']) + 1), net['BIC_iter'], 'bo-')
         plt.title('Learning Curve')
         plt.xlabel('Iteration')
         plt.ylabel('F')
         plt.grid()
 
         plt.show()
-
-N, K = 238, 12
-tp, tm = 0.05, 0.01
-graph = nx.read_gml("../data/sp_school_day_2.gml")
-A = nx.to_numpy_array(graph)
-
-opts = {'NUM_RESTARTS': 5, 'VERBOSE': 1}
-inference = NetworkModuleInference(A, 12, opts=opts)
-best_net, nets_by_K = inference.learn_restart()
-inference.plot_results(best_net, nets_by_K)
-
