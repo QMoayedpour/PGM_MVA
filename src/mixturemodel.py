@@ -14,6 +14,9 @@ from concurrent.futures import ThreadPoolExecutor
 from sklearn.cluster import KMeans
 
 
+# Afin d'appliquer les opérations en parralèle on définit un "worker" avec torch
+# pour utiliser torch multiprocessing
+
 def worker(seed, model, results, init, max_it, tolerance):
     torch.manual_seed(seed)
 
@@ -55,14 +58,16 @@ class MixtureModel():
         self.logs_like = []
         self.X = torch.tensor(X, dtype=torch.float, device=self.device)
         self.tau = self._init_tau()
-    
+
     def _init_tau(self):
         tau = torch.rand(self.N, self.K, device=self.device)
         tau /= tau.sum(dim=1, keepdim=True)
         return tau
 
     def _init_tau_sparse(self, sparse=1):
-
+        """Permet de générer un vecteur tau de manière "sparse" comme décrit dans le report,
+        on met a 0 aléatoirement v index
+        """
         if sparse > self.K:
             raise ValueError("Pas de valeurs non nulles supérieurs au nombre de classe (baisser sparse).")
 
@@ -104,6 +109,8 @@ class MixtureModel():
         return tau
 
     def _init_K_means(self, max_iter=5):
+        """Initie les tau_i,q par Kmeans
+        """
         adj_matrix = self.X.cpu().numpy().copy()
         centroids = []
         first_centroid = random.randint(0, self.N - 1)
@@ -155,7 +162,7 @@ class MixtureModel():
 
     def comp_alpha_pi(self, tau):
 
-        mask = 1 - torch.eye(self.N, device=tau.device)  # Diagonal mask to exclude self-loops
+        mask = 1 - torch.eye(self.N, device=tau.device)  # Mask diagonal pour masquer quand i=j
 
         numerator = torch.einsum('iq,jl,ij->lq', tau, tau, self.X.to(tau.device) * mask)
         denominator = torch.einsum('iq,jl,ij->lq', tau, tau, mask.float())
@@ -168,7 +175,8 @@ class MixtureModel():
     def compute_tau(self, alpha, pi, tau, epsilon=1e-5):
         N, K = tau.size()
 
-        # clip sur pi pour éviter les valeurs proches de 0 ou 1, qui peuvent poser problème lors du log.
+        # clip sur pi pour éviter les valeurs proches de 0 ou 1, qui peuvent poser problème
+        # lors du passage au logarithme.
         pi = torch.clamp(pi, min=epsilon, max=1 - epsilon)
 
         X_expanded = self.X.unsqueeze(-1).unsqueeze(-1)  # (N, N, 1, 1)
@@ -215,6 +223,8 @@ class MixtureModel():
 
 
     def _likelihood(self, alpha, pi, tau, epsilon=1e-5):
+        """Calcul de la likelihood du modèle
+        """
         pi = torch.clamp(pi, min=epsilon, max=1 - epsilon)
         term1 = torch.einsum('iq,q->', tau, torch.log(alpha))
 
@@ -228,9 +238,12 @@ class MixtureModel():
         term3 = -torch.einsum('iq,iq->', tau, torch.log(tau + epsilon))
 
         result = term1 + term2 + term3
-        return result#/self.N
+        return result
 
     def _fixed_point_algorithm(self, alpha, pi, tau_initial, tol=1e-6, max_iter=100):
+        """Fixed point algorithm, on utilise la norme de Frobenius afin de savoir quand s'arreter
+        En pratique, la fonction s'arrête bien avant 100 itérations
+        """
         tau = tau_initial.clone()
         for i in range(max_iter):
             tau_new = self.compute_tau(alpha, pi, tau)
@@ -243,10 +256,13 @@ class MixtureModel():
 
     def em(self, max_it=50, tolerance=1e-10, upd_params=True, verbose=True,
            tau=None, log_path=False, max_it_fp=50):
+        """Em algorithme, on peut prendre (ou non) tau en entrée afin de pouvoir tester différentes
+        instanciations
+        """
         if tau == None:
             tau = self.tau
         tau = tau.to(self.device)
-        self.X = self.X.to(self.device)
+        self.X = self.X.to(self.device) # On s'assure que tout nos tensors sont au même device
         start_time = time.time()
         logs_like = []
         prev_value = -float('inf')
@@ -255,7 +271,7 @@ class MixtureModel():
             alpha, pi = self.comp_alpha_pi(tau)  # M step
             if torch.isnan(alpha).any():
                 print("Nans in alpha")
-            if torch.isnan(pi).any():
+            if torch.isnan(pi).any(): # Nous avions mis ces lignes pour voir d'ou provenait les NaN
                 print("Nans in pi")
             tau = self._fixed_point_algorithm(alpha, pi, tau, tolerance, max_it_fp)  # E step
             tau = torch.clamp(tau, min=1e-5, max=1 - 1e-5)
@@ -279,6 +295,8 @@ class MixtureModel():
         return alpha.numpy(), pi.numpy(), tau
 
     def _ICL(self, tau, Q, init=False):
+        """Calcul l'ICL
+        """
         if init:
             self.__init__(self.X.cpu().numpy(), self.N, Q, device=self.device)
             self.em()
@@ -302,8 +320,9 @@ class MixtureModel():
         return torch.searchsorted(cum_dist, rand_val).item()
 
     def plot_from_tau(self, tau, determinist=True):
+        """Affiche les prédictions par le modèle sur un graphique
+        """
         G = nx.from_numpy_array(self.X.cpu().numpy().astype(int))
-        #tau = self.tau.cpu().numpy()
         classes = [i for i in range(self.K)]
         for i, x in enumerate(tau):
             G.nodes[i]['cluster'] = np.argmax(x) if determinist else self.discrete_distribution(x)
@@ -314,7 +333,7 @@ class MixtureModel():
         nx.draw(G, pos, with_labels=False, node_size=100, node_color=node_colors, font_size=15, font_weight='bold', edge_color='gray')
         plt.show()
 
-    def loss(self, G, determinist = True):
+    def loss(self, G, determinist=True):
         #if determinist : return the number of mismatch
         #else : return the sum of 1 - the probability of correct match 
         perm = list(permutations([i for i in range(self.K)]))
@@ -414,6 +433,8 @@ class MixtureModel():
         }
 
     def full_proc(self, list_K=[8], n_parralels=20, max_it=30, criterion="ICL", init=""):
+        """full_proc pour full procédure, estime le modèle pour une liste de nombre de cluster donnée
+        """
         all_results = {}
         for K in tqdm(list_K):
             self.K = K
@@ -425,8 +446,10 @@ class MixtureModel():
             all_results[K]["AIC"] = self._AIC(all_results[K]["tau"], K)
         return all_results
 
-    def em_parallelised_2(self, num_inits=5, max_it=50, tolerance=1e-10, 
+    def em_parallelised_2(self, num_inits=5, max_it=50, tolerance=1e-10,
                           upd_params=True, return_params=False, init="", verbose=True):
+        """Fonction pour parraléliser les estimations avec torch multiprocessing
+        """
         manager = mp.Manager()
         results = manager.list()
 
