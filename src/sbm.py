@@ -37,6 +37,13 @@ class MySbmFromScratch(object):
 
     def generate_graph(self, N=200, K=3, n_classes=None, probs=None,
                        _lambda=1, multiplier=1, alpha=1):
+        """La fonction prends plusieurs entrées possibles:
+        Soit, on donne directement les parametres du modèles (ie le nombre de points par classes et la 
+        matrice pi)
+        Soit on génère aléatoirement un graph: lambda controle les connexions intra clusters,
+        multiplier l'intensité des probabilités de la matrice pi, et alpha la répartition des points par 
+        classes, (Parametre d'une loi dirichlet)
+        """
 
         if n_classes is None and probs is None:
             self.edges, self.nodes = self._generate_from_nk(N, K, _lambda=_lambda, alpha=alpha,
@@ -57,7 +64,6 @@ class MySbmFromScratch(object):
         self.n_classes = [labels.count(i) for i in range(len(self.n_classes))]
         node_values = dict(zip(self.G.nodes, labels))
         nx.set_node_attributes(self.G, node_values, name="gt")
-        #nx.set_node_attributes(self.G, labels, 'gt')  # Initialise les classes à 0 pour toutes
 
     def plot_graph(self):
         plot_sbm(self.G, self.n_classes)
