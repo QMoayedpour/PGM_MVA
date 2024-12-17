@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 
 
 def get_adjancy(edges, total_nodes):
+    """Renvoi la matrice d'agence a partir des edges et nodes
+    """
 
     adj_matrix = np.zeros((total_nodes, total_nodes), dtype=int)
 
@@ -15,6 +17,9 @@ def get_adjancy(edges, total_nodes):
 
 
 def random_permute_adj(adj_matrix, plot=True):
+    """Opère une permutation aléatoire de la matrice d'agence car pour nos graphs
+    générées, la matrice est déjà ordonnée
+    """
     n = adj_matrix.shape[0]
     idx = np.arange(n)
 
