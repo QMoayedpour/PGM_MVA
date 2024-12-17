@@ -24,13 +24,16 @@ def predictions_to_partition(predictions, graph):
     return partition
 
 
-def comp_relative_modularity(graph, tau):
+def comp_relative_modularity(graph, tau, relative=False):
     """
     Calcul la modularité relative a la modularité du graph avec les vraies classes
     """
     preds = predictions_to_partition(tau.argmax(dim=1), graph)
 
     modularity_preds = modularity(graph, preds)
+
+    if not relative:
+        return modularity_preds
 
     modularity_gt = compute_modularity_from_gt(graph)
 
@@ -41,11 +44,11 @@ def comp_relative_modularity(graph, tau):
         raise ValueError("Modularity of the graph is =0")
 
 
-def comp_nmi(graph, tau):
+def comp_nmi(graph, tau, class_name="gt"):
     """
     Calcul le NMI entre les vrais labels et labels du modèle (en partant de tau)
     """
-    list_gt = [data["gt"] for _, data in graph.nodes(data=True)]
+    list_gt = [data[class_name] for _, data in graph.nodes(data=True)]
     return nmi(list_gt, tau.argmax(dim=1).numpy().tolist())
 
 def comp_nmi_school(graph, tau):
@@ -77,6 +80,7 @@ def comp_entropy(labels):
         prob = count / total
         entropy -= prob * math.log(prob, 2)  # Log base 2
     return entropy
+
 
 def comp_mi(labels_true, labels_pred):
     """Calcule l'information mutuelle entre deux distributions."""
