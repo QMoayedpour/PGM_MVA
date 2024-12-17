@@ -3,8 +3,7 @@ import time
 from .viz import *
 import torch.multiprocessing as mp
 from itertools import permutations
-from .sbm import generate_sbm, MySbmFromScratch
-from .utils import get_adjancy, random_permute_adj, convert_to_ranks
+from .utils import convert_to_ranks
 from sklearn.metrics.pairwise import euclidean_distances
 import networkx as nx
 import random
@@ -302,9 +301,9 @@ class MixtureModel():
         rand_val = np.random.rand()
         return torch.searchsorted(cum_dist, rand_val).item()
 
-    def plot_from_tau(self, determinist=True):
+    def plot_from_tau(self, tau, determinist=True):
         G = nx.from_numpy_array(self.X.cpu().numpy().astype(int))
-        tau = self.tau.cpu().numpy()
+        #tau = self.tau.cpu().numpy()
         classes = [i for i in range(self.K)]
         for i, x in enumerate(tau):
             G.nodes[i]['cluster'] = np.argmax(x) if determinist else self.discrete_distribution(x)
