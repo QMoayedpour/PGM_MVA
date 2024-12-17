@@ -5,5 +5,6 @@ setup(
     version="0.1.0",
     packages=find_packages(),
     install_requires=["networkx", "torch", "numpy",
-                      "matplotlib", "scikit-learn", "scipy"],
+                      "matplotlib", "scikit-learn", "scipy",
+                      "tqdm", "numba"],
 )
